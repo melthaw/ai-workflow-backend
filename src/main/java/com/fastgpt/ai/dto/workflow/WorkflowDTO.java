@@ -1,100 +1,72 @@
 package com.fastgpt.ai.dto.workflow;
 
+import com.fastgpt.ai.entity.workflow.Edge;
+import com.fastgpt.ai.entity.workflow.Node;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
-import java.util.Map;
 
 /**
- * DTO for workflow definition
+ * 工作流DTO
+ * 对标Next.js版本中的工作流结构
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class WorkflowDTO {
-    
     /**
-     * Internal DB ID
-     */
-    private String id;
-    
-    /**
-     * External workflow ID
+     * 工作流ID
      */
     private String workflowId;
     
     /**
-     * ID of the user who owns this workflow
-     */
-    private String userId;
-    
-    /**
-     * ID of the team if applicable
-     */
-    private String teamId;
-    
-    /**
-     * ID of the app this workflow is associated with
-     */
-    private String appId;
-    
-    /**
-     * ID of the module this workflow is part of
-     */
-    private String moduleId;
-    
-    /**
-     * Name of the workflow
+     * 工作流名称
      */
     private String name;
     
     /**
-     * Description of the workflow
+     * 应用ID
+     */
+    private String appId;
+    
+    /**
+     * 用户ID
+     */
+    private String userId;
+    
+    /**
+     * 团队ID
+     */
+    private String teamId;
+    
+    /**
+     * 创建时间
+     */
+    private Date createTime;
+    
+    /**
+     * 更新时间
+     */
+    private Date updateTime;
+    
+    /**
+     * 描述
      */
     private String description;
     
     /**
-     * When the workflow was created
+     * 工作流节点列表
      */
-    private LocalDateTime createTime;
+    private List<Node> nodes = new ArrayList<>();
     
     /**
-     * When the workflow was last updated
+     * 工作流边列表
      */
-    private LocalDateTime updateTime;
-    
-    /**
-     * List of nodes in the workflow
-     */
-    private List<NodeDefDTO> nodes;
-    
-    /**
-     * List of edges/connections between nodes
-     */
-    private List<ConnectionDTO> edges;
-    
-    /**
-     * Default input values for the workflow
-     */
-    private Map<String, Object> defaultInputs;
-    
-    /**
-     * Additional workflow configuration
-     */
-    private Map<String, Object> config;
-    
-    /**
-     * Published status (draft, published, etc.)
-     */
-    private String status;
-    
-    /**
-     * Whether this workflow is a template
-     */
-    private Boolean isTemplate;
+    private List<Edge> edges = new ArrayList<>();
 } 

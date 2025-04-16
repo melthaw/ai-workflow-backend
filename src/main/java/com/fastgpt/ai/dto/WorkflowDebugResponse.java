@@ -2,6 +2,7 @@ package com.fastgpt.ai.dto;
 
 import com.fastgpt.ai.dto.workflow.EdgeStatusDTO;
 import com.fastgpt.ai.dto.workflow.NodeExecutionMetrics;
+import com.fastgpt.ai.entity.workflow.Edge;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;

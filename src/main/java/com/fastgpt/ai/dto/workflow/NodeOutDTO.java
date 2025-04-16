@@ -9,13 +9,33 @@ import java.util.Map;
 import java.util.HashMap;
 
 /**
- * DTO for node execution output
+ * 节点执行输出DTO
+ * 对标Next.js版本中的NodeOutDTO
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class NodeOutDTO {
+    /**
+     * 输出值映射
+     */
+    private Map<String, Object> output;
+    
+    /**
+     * 节点执行响应数据
+     */
+    private Map<String, Object> responseData;
+    
+    /**
+     * 资源使用情况
+     */
+    private Map<String, Object> usages;
+    
+    /**
+     * 新变量
+     */
+    private Map<String, Object> newVariables;
     
     /**
      * Node ID
@@ -31,11 +51,6 @@ public class NodeOutDTO {
      * Error message if execution failed
      */
     private String error;
-    
-    /**
-     * Output values from the node
-     */
-    private Map<String, Object> outputs;
     
     /**
      * Metadata about the node execution
@@ -149,5 +164,19 @@ public class NodeOutDTO {
                 .outputs(outputs != null ? outputs : new HashMap<>())
                 .metadata(metadata != null ? metadata : new HashMap<>())
                 .build();
+    }
+    
+    /**
+     * 提供兼容性的方法，确保现有代码可以正常工作
+     */
+    public Map<String, Object> getOutputs() {
+        return output != null ? output : new HashMap<>();
+    }
+    
+    /**
+     * 提供兼容性的方法，确保现有代码可以正常工作
+     */
+    public void setOutputs(Map<String, Object> outputs) {
+        this.output = outputs;
     }
 } 

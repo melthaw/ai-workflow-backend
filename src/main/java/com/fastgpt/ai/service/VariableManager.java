@@ -1,5 +1,8 @@
 package com.fastgpt.ai.service;
 
+import com.fastgpt.ai.entity.workflow.Node;
+
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -87,4 +90,36 @@ public interface VariableManager {
      * @return Formatted value
      */
     Object formatValue(Object value, String targetType);
+    
+    /**
+     * 替换文本中的变量引用
+     * 支持替换：
+     * 1. 系统变量: {{变量名}}
+     * 2. 节点输出引用: {{$nodeId.outputKey$}}
+     * 
+     * @param text 包含变量引用的文本
+     * @param nodes 运行时节点列表
+     * @param variables 当前变量映射
+     * @return 替换后的值
+     */
+    Object replaceVariables(Object value, List<Node> nodes, Map<String, Object> variables);
+    
+    /**
+     * 获取引用变量的实际值
+     * 
+     * @param value 可能包含变量引用的值
+     * @param nodes 运行时节点列表
+     * @param variables 当前变量映射
+     * @return 解析后的值
+     */
+    Object getReferenceVariableValue(Object value, List<Node> nodes, Map<String, Object> variables);
+    
+    /**
+     * 移除系统变量
+     * 
+     * @param variables 包含系统变量的变量映射
+     * @param externalVariables 外部变量
+     * @return 移除系统变量后的变量映射
+     */
+    Map<String, Object> removeSystemVariables(Map<String, Object> variables, Map<String, Object> externalVariables);
 } 

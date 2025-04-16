@@ -2,97 +2,128 @@ package com.fastgpt.ai.entity.workflow;
 
 import com.fastgpt.ai.constant.FlowNodeTypeEnum;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Field;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Base class for workflow nodes
+ * 工作流节点实体
+ * 对标Next.js中的RuntimeNodeItemType
  */
 @Data
+@NoArgsConstructor
 public class Node {
     @Id
     private String id;
     
     /**
-     * Node identifier within the workflow
+     * The unique identifier of this node in the workflow
      */
-    @Field("node_id") 
     private String nodeId;
     
     /**
-     * Node type from FlowNodeTypeEnum
-     */
-    private String type;
-    
-    /**
-     * Display name of the node
+     * Node name
      */
     private String name;
     
     /**
-     * X position in the workflow UI
+     * The type of this node
      */
-    @Field("pos_x")
-    private Integer posX;
+    private FlowNodeTypeEnum type;
     
     /**
-     * Y position in the workflow UI
+     * Whether this node is an entry point for the workflow
      */
-    @Field("pos_y")
-    private Integer posY;
+    private boolean entry;
+    
+    /**
+     * Position X coordinate
+     */
+    private double x;
+    
+    /**
+     * Position Y coordinate
+     */
+    private double y;
+    
+    /**
+     * Node width
+     */
+    private double width;
+    
+    /**
+     * Node height
+     */
+    private double height;
+    
+    /**
+     * Whether this node is selected
+     */
+    private boolean selected;
+    
+    /**
+     * Node description
+     */
+    private String description;
     
     /**
      * Node inputs definition
      */
-    private List<NodeIO> inputs;
+    private List<NodeInput> inputs = new ArrayList<>();
     
     /**
      * Node outputs definition
      */
-    private List<NodeIO> outputs;
+    private List<NodeOutput> outputs = new ArrayList<>();
     
     /**
-     * Node configuration and parameters
+     * Whether to show status updates for this node
      */
-    private Map<String, Object> data;
+    private boolean showStatus;
     
     /**
-     * Class representing an input or output for a node
+     * Icon for this node
      */
-    @Data
-    public static class NodeIO {
-        /**
-         * Input/output identifier
-         */
-        private String key;
-        
-        /**
-         * Display label
-         */
-        private String label;
-        
-        /**
-         * Data type (string, number, boolean, array, object)
-         */
-        private String type;
-        
-        /**
-         * Whether this input/output is required
-         */
-        private Boolean required;
-        
-        /**
-         * Default value if any
-         */
-        @Field("default_value")
-        private Object defaultValue;
-        
-        /**
-         * Additional properties for this input/output
-         */
+    private String icon;
+    
+    /**
+     * Node color
+     */
+    private String color;
+    
+    /**
+     * Whether this node is disabled
+     */
+    private boolean disabled;
+    
+    /**
+     * Node configuration object
+     */
+    @Field("config")
+    private NodeConfig config;
+    
+    /**
+     * Node style configuration
+     */
+    public static class NodeConfig {
         private Map<String, Object> properties;
+    }
+    
+    /**
+     * 判断是否为入口节点
+     */
+    public boolean isEntry() {
+        return entry;
+    }
+    
+    /**
+     * 设置入口状态
+     */
+    public void setEntry(boolean entry) {
+        this.entry = entry;
     }
 } 
