@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * DTO for workflow node connections
+ * DTO for workflow edge connections
  */
 @Data
 @Builder
@@ -15,14 +15,14 @@ import lombok.NoArgsConstructor;
 public class ConnectionDTO {
     
     /**
+     * Unique ID of the edge
+     */
+    private String id;
+    
+    /**
      * ID of the source node
      */
     private String sourceNodeId;
-    
-    /**
-     * Output field name from the source node
-     */
-    private String sourceHandle;
     
     /**
      * ID of the target node
@@ -30,7 +30,22 @@ public class ConnectionDTO {
     private String targetNodeId;
     
     /**
-     * Input field name to the target node
+     * Key of the output from the source node
      */
-    private String targetHandle;
+    private String sourceOutputKey;
+    
+    /**
+     * Key of the input to the target node
+     */
+    private String targetInputKey;
+    
+    /**
+     * Optional label for the connection
+     */
+    private String label;
+    
+    /**
+     * Optional style configuration
+     */
+    private Object style;
 } 

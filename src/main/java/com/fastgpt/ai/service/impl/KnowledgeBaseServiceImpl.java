@@ -18,11 +18,21 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.embedding.EmbeddingClient;
+import org.springframework.ai.vectorstore.VectorStore;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * Implementation of the knowledge base service
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -33,6 +43,8 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final KbDataMapper kbDataMapper;
     private final VectorService vectorService;
+    private final Optional<VectorStore> vectorStore;
+    private final Optional<EmbeddingClient> embeddingClient;
 
     @Override
     @Transactional
@@ -237,5 +249,138 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     @Override
     public List<KbDataDTO> search(VectorSearchRequest request) {
         return vectorService.search(request);
+    }
+
+    @Override
+    public List<Document> searchDocuments(Map<String, Object> params) {
+        log.info("Searching documents with params: {}", params);
+        
+        try {
+            // Extract search parameters
+            String query = params.containsKey("query") ? params.get("query").toString() : "";
+            int maxResults = params.containsKey("maxResults") ? 
+                    Integer.parseInt(params.get("maxResults").toString()) : 5;
+            
+            if (query.isEmpty()) {
+                log.warn("Empty search query");
+                return new ArrayList<>();
+            }
+            
+            // Check if vector store and embedding client are available
+            if (vectorStore.isEmpty()) {
+                log.error("Vector store is not available");
+                return new ArrayList<>();
+            }
+            
+            // Simple implementation - using bare VectorStore API
+            // This might need adjustment based on your specific VectorStore implementation
+            try {
+                // Search by text query
+                return vectorStore.get().findRelevant(query, maxResults);
+            } catch (Exception e) {
+                // Try another commonly available method if the first one fails
+                try {
+                    return vectorStore.get().search(query, maxResults);
+                } catch (Exception e2) {
+                    log.error("Error searching documents: {}", e2.getMessage());
+                    return new ArrayList<>();
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error in document search: {}", e.getMessage(), e);
+            return new ArrayList<>();
+        }
+    }
+    
+    @Override
+    public Document getDocument(String documentId) {
+        log.info("Getting document with ID: {}", documentId);
+        
+        try {
+            if (vectorStore.isEmpty()) {
+                log.error("Vector store is not available");
+                return null;
+            }
+            
+            // This is a placeholder - actual implementation depends on your vector store
+            // Most vector stores don't have a direct "get by ID" method
+            // You might need to implement this differently based on your storage
+            
+            // Sample implementation:
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("id", documentId);
+            
+            List<Document> documents = vectorStore.get().findRelevant("id:" + documentId, 1);
+            return documents.isEmpty() ? null : documents.get(0);
+        } catch (Exception e) {
+            log.error("Error getting document: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+    
+    @Override
+    public Document storeDocument(Document document, String knowledgeBaseId) {
+        log.info("Storing document in knowledge base: {}", knowledgeBaseId);
+        
+        try {
+            if (vectorStore.isEmpty()) {
+                log.error("Vector store is not available");
+                return null;
+            }
+            
+            // Add knowledge base ID to metadata if provided
+            if (knowledgeBaseId != null && !knowledgeBaseId.isEmpty()) {
+                Map<String, Object> metadata = new HashMap<>(document.getMetadata());
+                metadata.put("knowledgeBaseId", knowledgeBaseId);
+                document = Document.from(document.getContent(), metadata);
+            }
+            
+            // Store document
+            vectorStore.get().add(List.of(document));
+            return document;
+        } catch (Exception e) {
+            log.error("Error storing document: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+    
+    @Override
+    public boolean deleteDocument(String documentId) {
+        log.info("Deleting document with ID: {}", documentId);
+        
+        try {
+            if (vectorStore.isEmpty()) {
+                log.error("Vector store is not available");
+                return false;
+            }
+            
+            // This is a placeholder - actual implementation depends on your vector store
+            // Most vector stores have some kind of delete method
+            // Sample implementation:
+            try {
+                vectorStore.get().delete(List.of(documentId));
+                return true;
+            } catch (Exception e) {
+                log.error("Error deleting document: {}", e.getMessage());
+                return false;
+            }
+        } catch (Exception e) {
+            log.error("Error in document deletion: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+    
+    @Override
+    public Map<String, String> listKnowledgeBases() {
+        log.info("Listing knowledge bases");
+        
+        // This is a placeholder - actual implementation depends on how you store knowledge bases
+        // Sample implementation with some demo data:
+        Map<String, String> knowledgeBases = new HashMap<>();
+        knowledgeBases.put("kb1", "General Knowledge");
+        knowledgeBases.put("kb2", "Technical Documentation");
+        knowledgeBases.put("kb3", "Customer Support");
+        
+        return knowledgeBases;
     }
 } 

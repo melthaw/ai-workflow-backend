@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.Map;
+import java.util.HashMap;
 
 /**
  * DTO for node execution output
@@ -17,63 +18,136 @@ import java.util.Map;
 public class NodeOutDTO {
     
     /**
-     * Execution status code (0 = success, others = error)
+     * Node ID
      */
-    private int status;
+    private String nodeId;
     
     /**
-     * Error message if status is not 0
+     * Whether the node execution was successful
      */
-    private String message;
+    private boolean success;
     
     /**
-     * Output values from the node execution
+     * Error message if execution failed
+     */
+    private String error;
+    
+    /**
+     * Output values from the node
      */
     private Map<String, Object> outputs;
     
     /**
-     * Metadata about the execution (timing, used resources, etc.)
+     * Metadata about the node execution
      */
     private Map<String, Object> metadata;
-
+    
     /**
-     * Create a success result
+     * Whether the node execution has been suspended for user interaction
+     */
+    private boolean suspended;
+    
+    /**
+     * ID of the interaction (for suspended nodes waiting for user interaction)
+     */
+    private String interactionId;
+    
+    /**
+     * Create a successful result
+     * @param outputs Node outputs
+     * @return A success result
      */
     public static NodeOutDTO success(Map<String, Object> outputs) {
         return NodeOutDTO.builder()
-                .status(0)
-                .outputs(outputs)
+                .success(true)
+                .outputs(outputs != null ? outputs : new HashMap<>())
                 .build();
     }
     
     /**
-     * Create a success result with metadata
+     * Create a successful result with metadata
+     * @param outputs Node outputs
+     * @param metadata Node metadata
+     * @return A success result
      */
     public static NodeOutDTO success(Map<String, Object> outputs, Map<String, Object> metadata) {
         return NodeOutDTO.builder()
-                .status(0)
-                .outputs(outputs)
-                .metadata(metadata)
+                .success(true)
+                .outputs(outputs != null ? outputs : new HashMap<>())
+                .metadata(metadata != null ? metadata : new HashMap<>())
                 .build();
     }
     
     /**
      * Create an error result
+     * @param errorMessage Error message
+     * @return An error result
      */
-    public static NodeOutDTO error(String message) {
+    public static NodeOutDTO error(String errorMessage) {
         return NodeOutDTO.builder()
-                .status(1)
-                .message(message)
+                .success(false)
+                .error(errorMessage)
+                .outputs(new HashMap<>())
                 .build();
     }
     
     /**
-     * Create an error result with status code
+     * Create a suspended result (waiting for user interaction)
+     * @param outputs Node outputs
+     * @return A suspended result
      */
-    public static NodeOutDTO error(int status, String message) {
+    public static NodeOutDTO suspended(Map<String, Object> outputs) {
         return NodeOutDTO.builder()
-                .status(status)
-                .message(message)
+                .success(true)
+                .suspended(true)
+                .outputs(outputs != null ? outputs : new HashMap<>())
+                .build();
+    }
+    
+    /**
+     * Create a suspended result with metadata
+     * @param outputs Node outputs
+     * @param metadata Node metadata
+     * @return A suspended result
+     */
+    public static NodeOutDTO suspended(Map<String, Object> outputs, Map<String, Object> metadata) {
+        return NodeOutDTO.builder()
+                .success(true)
+                .suspended(true)
+                .outputs(outputs != null ? outputs : new HashMap<>())
+                .metadata(metadata != null ? metadata : new HashMap<>())
+                .build();
+    }
+    
+    /**
+     * Create a suspended result with interaction ID
+     * @param outputs Node outputs
+     * @param interactionId ID of the interaction
+     * @return A suspended result
+     */
+    public static NodeOutDTO suspended(Map<String, Object> outputs, String interactionId) {
+        return NodeOutDTO.builder()
+                .success(true)
+                .suspended(true)
+                .interactionId(interactionId)
+                .outputs(outputs != null ? outputs : new HashMap<>())
+                .build();
+    }
+    
+    /**
+     * Create a suspended result with interaction ID and metadata
+     * @param outputs Node outputs
+     * @param interactionId ID of the interaction
+     * @param metadata Node metadata
+     * @return A suspended result
+     */
+    public static NodeOutDTO suspended(Map<String, Object> outputs, String interactionId, Map<String, Object> metadata) {
+        return NodeOutDTO.builder()
+                .success(true)
+                .suspended(true)
+                .interactionId(interactionId)
+                .outputs(outputs != null ? outputs : new HashMap<>())
+                .metadata(metadata != null ? metadata : new HashMap<>())
                 .build();
     }
 } 

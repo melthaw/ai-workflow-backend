@@ -1,7 +1,18 @@
 package com.fastgpt.ai.service.impl;
 
+import com.fastgpt.ai.common.Constants;
+import com.fastgpt.ai.dto.ChatCompletionResponse;
+import com.fastgpt.ai.dto.function.FunctionCallResponse;
+import com.fastgpt.ai.dto.function.FunctionDefinition;
+import com.fastgpt.ai.dto.openai.ChatCompletionRequest;
+import com.fastgpt.ai.dto.openai.ChatMessage;
+import com.fastgpt.ai.dto.openai.Choice;
+import com.fastgpt.ai.dto.openai.OpenAIResponse;
 import com.fastgpt.ai.service.AiService;
 import com.fastgpt.ai.service.ChatConfigService;
+import com.fastgpt.ai.service.OpenAIClient;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -10,10 +21,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RequestCallback;
 import org.springframework.web.client.ResponseExtractor;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 
 /**
  * Implementation of AI service using OpenAI API
@@ -25,6 +39,8 @@ public class AiServiceImpl implements AiService {
 
     private final RestTemplate restTemplate;
     private final ChatConfigService chatConfigService;
+    private final OpenAIClient openAIClient;
+    private final ObjectMapper objectMapper;
     
     @Value("${spring.ai.openai.api-key}")
     private String openaiApiKey;
@@ -262,5 +278,131 @@ public class AiServiceImpl implements AiService {
         }
         
         return "";
+    }
+
+    @Override
+    public CompletableFuture<String> generateResponse(String prompt) {
+        return generateResponse(prompt, defaultModel, 0.7f, 1000);
+    }
+
+    @Override
+    public CompletableFuture<String> generateResponse(String prompt, String model) {
+        return generateResponse(prompt, model, 0.7f, 1000);
+    }
+
+    @Override
+    public CompletableFuture<String> generateResponse(String prompt, String model, float temperature, int maxTokens) {
+        ChatCompletionRequest request = new ChatCompletionRequest();
+        request.setModel(model);
+        request.setTemperature(temperature);
+        request.setMaxTokens(maxTokens);
+        request.setMessages(List.of(
+                new ChatMessage("user", prompt)
+        ));
+
+        return openAIClient.createChatCompletion(request)
+                .thenApply(response -> {
+                    if (response.getChoices() != null && !response.getChoices().isEmpty()) {
+                        return response.getChoices().get(0).getMessage().getContent();
+                    }
+                    return "";
+                });
+    }
+
+    @Override
+    public CompletableFuture<FunctionCallResponse> generateWithFunctions(String prompt, List<FunctionDefinition> functionDefinitions) {
+        return generateWithFunctions(prompt, functionDefinitions, null);
+    }
+
+    @Override
+    public CompletableFuture<FunctionCallResponse> generateWithFunctions(String prompt, List<FunctionDefinition> functionDefinitions, String systemPrompt) {
+        ChatCompletionRequest request = new ChatCompletionRequest();
+        request.setModel(defaultModel);
+        request.setTemperature(0.7f);
+        
+        List<ChatMessage> messages = new ArrayList<>();
+        if (StringUtils.hasText(systemPrompt)) {
+            messages.add(new ChatMessage("system", systemPrompt));
+        }
+        messages.add(new ChatMessage("user", prompt));
+        request.setMessages(messages);
+        
+        // Convert function definitions to OpenAI format
+        if (functionDefinitions != null && !functionDefinitions.isEmpty()) {
+            request.setFunctions(functionDefinitions.stream()
+                    .map(FunctionDefinition::toOpenAIFormat)
+                    .collect(Collectors.toList()));
+            
+            // Set function call policy
+            boolean hasRequiredFunction = functionDefinitions.stream()
+                    .anyMatch(FunctionDefinition::isRequired);
+            
+            if (hasRequiredFunction) {
+                request.setFunctionCall("auto");
+            } else {
+                request.setFunctionCall("none");
+            }
+        }
+        
+        return openAIClient.createChatCompletion(request)
+                .thenApply(this::processFunctionCallResponse);
+    }
+    
+    private FunctionCallResponse processFunctionCallResponse(OpenAIResponse response) {
+        if (response == null || response.getChoices() == null || response.getChoices().isEmpty()) {
+            return new FunctionCallResponse("No response from AI service", null, null);
+        }
+        
+        Choice choice = response.getChoices().get(0);
+        ChatMessage message = choice.getMessage();
+        String content = message.getContent();
+        
+        // Check if there's a function call
+        Map<String, Object> functionCall = message.getFunctionCall();
+        
+        if (functionCall != null) {
+            String name = (String) functionCall.get("name");
+            
+            // Parse arguments
+            String argsJson = (String) functionCall.get("arguments");
+            Map<String, Object> args = null;
+            
+            try {
+                args = objectMapper.readValue(argsJson, Map.class);
+            } catch (JsonProcessingException e) {
+                log.error("Failed to parse function call arguments: {}", argsJson, e);
+            }
+            
+            return new FunctionCallResponse(
+                content,
+                new FunctionCallResponse.FunctionCall(name, args, null),
+                response
+            );
+        }
+        
+        // Regular text response
+        return new FunctionCallResponse(content, null, response);
+    }
+
+    @Override
+    public List<String> getAvailableModels() {
+        return Constants.SUPPORTED_MODELS;
+    }
+
+    @Override
+    public Map<String, Object> getModelInfo(String model) {
+        // TODO: Implement model information retrieval
+        return Map.of(
+            "name", model,
+            "maxContextLength", model.contains("gpt-4") ? 8192 : 4096,
+            "tokenLimit", model.contains("gpt-4") ? 1024 : 512
+        );
+    }
+
+    @Override
+    public int calculateTokens(String text) {
+        // Simple estimation: roughly 4 characters per token for English text
+        if (text == null) return 0;
+        return text.length() / 4;
     }
 } 

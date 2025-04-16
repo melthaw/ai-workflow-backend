@@ -5,13 +5,50 @@ import com.fastgpt.ai.dto.KnowledgeBaseDTO;
 import com.fastgpt.ai.dto.request.KbDataCreateRequest;
 import com.fastgpt.ai.dto.request.KnowledgeBaseCreateRequest;
 import com.fastgpt.ai.dto.request.VectorSearchRequest;
+import org.springframework.ai.document.Document;
 
 import java.util.List;
+import java.util.Map;
 
 /**
- * Service for knowledge base operations
+ * Service for managing and searching knowledge bases
  */
 public interface KnowledgeBaseService {
+    
+    /**
+     * Search documents in knowledge base
+     * @param params Search parameters including query, filters, etc.
+     * @return List of matching documents
+     */
+    List<Document> searchDocuments(Map<String, Object> params);
+    
+    /**
+     * Get a document by ID
+     * @param documentId Document ID
+     * @return The document if found
+     */
+    Document getDocument(String documentId);
+    
+    /**
+     * Store a document in a knowledge base
+     * @param document Document to store
+     * @param knowledgeBaseId Knowledge base ID
+     * @return Stored document with ID
+     */
+    Document storeDocument(Document document, String knowledgeBaseId);
+    
+    /**
+     * Delete a document from knowledge base
+     * @param documentId Document ID
+     * @return true if document was deleted, false otherwise
+     */
+    boolean deleteDocument(String documentId);
+    
+    /**
+     * Get a list of available knowledge bases
+     * @return List of knowledge base IDs and names
+     */
+    Map<String, String> listKnowledgeBases();
     
     /**
      * Create a new knowledge base

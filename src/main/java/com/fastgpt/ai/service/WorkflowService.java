@@ -2,12 +2,14 @@ package com.fastgpt.ai.service;
 
 import com.fastgpt.ai.dto.workflow.NodeOutDTO;
 import com.fastgpt.ai.dto.workflow.WorkflowDTO;
+import com.fastgpt.ai.dto.WorkflowDebugResponse;
 import com.fastgpt.ai.dto.request.WorkflowCreateRequest;
 import com.fastgpt.ai.dto.request.WorkflowUpdateRequest;
 
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 /**
  * Service for workflow management and execution
@@ -84,13 +86,23 @@ public interface WorkflowService {
     Map<String, Object> executeWorkflow(String workflowId, Map<String, Object> inputs);
     
     /**
+     * Execute a workflow with streaming support, providing progress updates through a consumer
+     * @param workflowId the ID of the workflow to execute
+     * @param inputs the input parameters for the workflow
+     * @param progressConsumer a consumer to receive progress updates during execution
+     * @return the final result of the workflow execution
+     */
+    Map<String, Object> executeWorkflowWithStream(String workflowId, Map<String, Object> inputs, 
+                                                 Consumer<Map<String, Object>> progressConsumer);
+    
+    /**
      * Dispatch a workflow execution, handling node sequencing and data flow
      * @param workflow Workflow DTO
      * @param inputs Map of input values
-     * @param nodeId ID of the node to start execution from (optional, null means start from entry nodes)
+     * @param startNodeId ID of the node to start execution from (optional, null means start from entry nodes)
      * @return Map of output values
      */
-    Map<String, Object> dispatchWorkflow(WorkflowDTO workflow, Map<String, Object> inputs, String nodeId);
+    Map<String, Object> dispatchWorkflow(WorkflowDTO workflow, Map<String, Object> inputs, String startNodeId);
     
     /**
      * Execute a single node in a workflow
@@ -123,4 +135,29 @@ public interface WorkflowService {
      * @return Map containing execution metadata
      */
     Map<String, Object> getExecutionMetadata(String workflowId);
+    
+    /**
+     * Get debug information for a workflow execution
+     * @param workflowId Workflow ID
+     * @param executionId Execution ID
+     * @return Debug response with execution details
+     */
+    WorkflowDebugResponse getDebugInfo(String workflowId, String executionId);
+    
+    /**
+     * Debug a single node with the given inputs
+     * @param workflowId Workflow ID
+     * @param nodeId Node ID
+     * @param inputs Input parameters
+     * @return Node execution output
+     */
+    NodeOutDTO debugNode(String workflowId, String nodeId, Map<String, Object> inputs);
+    
+    /**
+     * Resume a workflow execution with updated context
+     * @param executionId Execution ID
+     * @param context Updated execution context
+     * @return Execution result
+     */
+    Map<String, Object> resumeExecution(String executionId, Map<String, Object> context);
 } 

@@ -23,37 +23,32 @@ public class NodeDefDTO {
     private String id;
     
     /**
-     * Type of the node (e.g., "ai", "function", "input", "output")
+     * Type of the node (e.g., "chatNode", "datasetSearchNode", "answerNode")
      */
     private String type;
     
     /**
-     * Name/label of the node
+     * Position of the node in the workflow canvas
      */
-    private String name;
+    private Position position;
     
     /**
-     * X position in the workflow canvas
+     * Node properties (configuration)
      */
-    private Integer x;
-    
-    /**
-     * Y position in the workflow canvas
-     */
-    private Integer y;
+    private Map<String, Object> properties;
     
     /**
      * Input connections to this node
      */
-    private List<ConnectionDTO> inputs;
+    private List<NodeIODTO> inputs;
     
     /**
      * Output connections from this node
      */
-    private List<ConnectionDTO> outputs;
+    private List<NodeIODTO> outputs;
     
     /**
-     * Node-specific configuration data
+     * Node-specific configuration data (legacy)
      */
     private Map<String, Object> data;
     
@@ -66,4 +61,13 @@ public class NodeDefDTO {
      * Whether this node is a required node in the workflow
      */
     private Boolean isRequired;
+    
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class Position {
+        private Integer x;
+        private Integer y;
+    }
 } 

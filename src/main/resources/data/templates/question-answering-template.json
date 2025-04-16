@@ -1,0 +1,186 @@
+{
+  "templateId": "qa-workflow-template-001",
+  "name": "问答工作流",
+  "description": "一个基础的问答工作流，支持知识库查询和LLM回答",
+  "category": "对话应用",
+  "version": "1.0.0",
+  "tags": ["问答", "知识库", "入门"],
+  "official": true,
+  "nodes": [
+    {
+      "id": "start-node",
+      "type": "workflowStart",
+      "position": {
+        "x": 100,
+        "y": 100
+      },
+      "properties": {
+        "name": "输入节点"
+      },
+      "inputs": [],
+      "outputs": [
+        {
+          "key": "userInput",
+          "name": "用户输入",
+          "type": "string",
+          "description": "用户发送的问题"
+        }
+      ]
+    },
+    {
+      "id": "dataset-search-node",
+      "type": "datasetSearchNode",
+      "position": {
+        "x": 100,
+        "y": 250
+      },
+      "properties": {
+        "name": "知识库搜索",
+        "datasetId": "${datasetId}",
+        "searchParams": {
+          "limit": 5,
+          "similarity": 0.7
+        }
+      },
+      "inputs": [
+        {
+          "key": "query",
+          "name": "查询内容",
+          "type": "string",
+          "required": true,
+          "connected": true,
+          "connectionSourceId": "start-node",
+          "connectionOutputKey": "userInput"
+        }
+      ],
+      "outputs": [
+        {
+          "key": "result",
+          "name": "搜索结果",
+          "type": "datasetQuote",
+          "description": "知识库搜索结果"
+        }
+      ]
+    },
+    {
+      "id": "chat-node",
+      "type": "chatNode",
+      "position": {
+        "x": 100,
+        "y": 400
+      },
+      "properties": {
+        "name": "AI回答",
+        "model": "${modelName}",
+        "temperature": 0.7,
+        "maxToken": 2000,
+        "systemPrompt": "你是一个AI助手，请根据提供的知识库内容回答用户的问题。如果知识库中没有相关信息，请礼貌地告知用户你不知道答案。"
+      },
+      "inputs": [
+        {
+          "key": "query",
+          "name": "用户问题",
+          "type": "string",
+          "required": true,
+          "connected": true,
+          "connectionSourceId": "start-node",
+          "connectionOutputKey": "userInput"
+        },
+        {
+          "key": "knowledge",
+          "name": "知识库引用",
+          "type": "datasetQuote",
+          "required": false,
+          "connected": true,
+          "connectionSourceId": "dataset-search-node",
+          "connectionOutputKey": "result"
+        }
+      ],
+      "outputs": [
+        {
+          "key": "answer",
+          "name": "AI回答",
+          "type": "string",
+          "description": "AI的回答内容"
+        }
+      ]
+    },
+    {
+      "id": "answer-node",
+      "type": "answerNode",
+      "position": {
+        "x": 100,
+        "y": 550
+      },
+      "properties": {
+        "name": "输出节点"
+      },
+      "inputs": [
+        {
+          "key": "answer",
+          "name": "回答",
+          "type": "string",
+          "required": true,
+          "connected": true,
+          "connectionSourceId": "chat-node",
+          "connectionOutputKey": "answer"
+        }
+      ],
+      "outputs": []
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-1",
+      "sourceNodeId": "start-node",
+      "targetNodeId": "dataset-search-node",
+      "sourceOutputKey": "userInput",
+      "targetInputKey": "query"
+    },
+    {
+      "id": "edge-2",
+      "sourceNodeId": "start-node",
+      "targetNodeId": "chat-node",
+      "sourceOutputKey": "userInput",
+      "targetInputKey": "query"
+    },
+    {
+      "id": "edge-3",
+      "sourceNodeId": "dataset-search-node",
+      "targetNodeId": "chat-node",
+      "sourceOutputKey": "result",
+      "targetInputKey": "knowledge"
+    },
+    {
+      "id": "edge-4",
+      "sourceNodeId": "chat-node",
+      "targetNodeId": "answer-node",
+      "sourceOutputKey": "answer",
+      "targetInputKey": "answer"
+    }
+  ],
+  "defaultInputs": {
+    "userInput": "如何使用工作流系统？"
+  },
+  "parameterDefinitions": {
+    "datasetId": {
+      "name": "知识库ID",
+      "description": "要搜索的知识库ID",
+      "type": "string",
+      "required": true
+    },
+    "modelName": {
+      "name": "模型名称",
+      "description": "使用的LLM模型名称",
+      "type": "string",
+      "defaultValue": "gpt-3.5-turbo",
+      "options": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"],
+      "required": true
+    }
+  },
+  "thumbnailUrl": "https://fastgpt.com/assets/templates/qa-workflow.png",
+  "usageCount": 0,
+  "config": {
+    "description": "这是一个简单的问答工作流模板，可以连接到知识库并使用LLM回答用户问题。用户可以根据自己的需求自定义知识库和模型。"
+  }
+} 
