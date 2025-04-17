@@ -1,85 +1,79 @@
 package com.fastgpt.ai.service;
 
-import com.fastgpt.ai.dto.function.FunctionCallResponse;
-import com.fastgpt.ai.dto.function.FunctionDefinition;
-
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.BiConsumer;
 
 /**
- * Service for interacting with AI models
+ * AI服务接口
+ * 统一处理各种AI模型调用
  */
 public interface AiService {
     
     /**
-     * Generate a simple text response
-     * 
-     * @param prompt The input prompt
-     * @param systemPrompt Optional system prompt
-     * @return Generated text response
+     * 聊天对话
+     *
+     * @param prompt 对话内容
+     * @param systemPrompt 系统提示
+     * @param history 对话历史
+     * @param model 模型名称
+     * @return 对话结果
      */
-    String generateSimpleResponse(String prompt, String systemPrompt);
+    Map<String, Object> chat(String prompt, String systemPrompt, List<Map<String, String>> history, String model);
     
     /**
-     * Generate a chat response using specified parameters
-     * 
-     * @param prompt The input prompt
-     * @param systemPrompt Optional system prompt
-     * @param model The model to use
-     * @param temperature The temperature parameter (0-1)
-     * @param maxTokens Maximum tokens to generate
-     * @return Generated text response
+     * 文本生成
+     *
+     * @param prompt 生成提示
+     * @param model 模型名称
+     * @param options 生成选项
+     * @return 生成结果
      */
-    String generateResponse(String prompt, String systemPrompt, String model, 
-                            Double temperature, Integer maxTokens);
+    Map<String, Object> generateText(String prompt, String model, Map<String, Object> options);
     
     /**
-     * Generate a response with function calling capabilities
-     * 
-     * @param prompt The user prompt
-     * @param functions Available functions
-     * @param model The model to use
-     * @return Future containing function call response
+     * 文本嵌入
+     *
+     * @param text 文本内容
+     * @param model 模型名称
+     * @return 嵌入向量
      */
-    CompletableFuture<FunctionCallResponse> generateWithFunctions(String prompt, 
-            List<FunctionDefinition> functions, String model);
+    Map<String, Object> embedText(String text, String model);
     
     /**
-     * Generate a response with function calling capabilities
-     * 
-     * @param prompt The user prompt
-     * @param systemPrompt Optional system prompt
-     * @param functions Available functions
-     * @param model The model to use
-     * @param temperature The temperature parameter (0-1)
-     * @return Future containing function call response
+     * 函数调用
+     *
+     * @param prompt 提示内容
+     * @param functions 可用函数定义
+     * @param model 模型名称
+     * @return 函数调用结果
      */
-    CompletableFuture<FunctionCallResponse> generateWithFunctions(String prompt, String systemPrompt,
-            List<FunctionDefinition> functions, String model, Double temperature);
+    Map<String, Object> functionCall(String prompt, List<Map<String, Object>> functions, String model);
     
     /**
-     * Get list of available models
-     * 
-     * @return List of available model identifiers
+     * 文本分类
+     *
+     * @param text 待分类文本
+     * @param categories 分类类别
+     * @param customPrompt 自定义提示词
+     * @return 分类结果
      */
-    List<String> getAvailableModels();
+    Map<String, Object> classifyText(String text, List<String> categories, String customPrompt);
     
     /**
-     * Get information about a specific model
-     * 
-     * @param modelId The model identifier
-     * @return Model information
+     * 情感分析
+     *
+     * @param text 文本内容
+     * @param options 分析选项
+     * @return 情感分析结果
      */
-    Map<String, Object> getModelInfo(String modelId);
+    Map<String, Object> analyzeSentiment(String text, Map<String, Object> options);
     
     /**
-     * Calculate token usage for a given text
+     * 生成简单文本响应
      * 
-     * @param text The text to calculate token usage for
-     * @param model The model to use for calculation
-     * @return Number of tokens
+     * @param prompt 提示词
+     * @param model 模型名称，如果为null则使用默认模型
+     * @return 生成的文本响应
      */
-    int calculateTokenUsage(String text, String model);
+    String generateSimpleResponse(String prompt, String model);
 } 

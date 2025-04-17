@@ -1,6 +1,7 @@
 package com.fastgpt.ai.service.impl;
 
 import com.fastgpt.ai.constant.FlowNodeTypeEnum;
+import com.fastgpt.ai.dto.EdgeStatusDTO;
 import com.fastgpt.ai.dto.workflow.NodeOutDTO;
 import com.fastgpt.ai.dto.workflow.WorkflowDTO;
 import com.fastgpt.ai.dto.workflow.NodeDefDTO;

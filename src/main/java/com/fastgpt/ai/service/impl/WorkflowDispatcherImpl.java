@@ -1,5 +1,6 @@
 package com.fastgpt.ai.service.impl;
 
+import com.fastgpt.ai.dto.EdgeStatusDTO;
 import com.fastgpt.ai.dto.workflow.NodeOutDTO;
 import com.fastgpt.ai.dto.workflow.WorkflowDTO;
 import com.fastgpt.ai.dto.WorkflowDebugResponse;
@@ -17,12 +18,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 /**
- * 主要工作流调度器实现，类似于Next.js版本的dispatchWorkFlow函数
+ * 工作流调度器实现
+ * 对标Next.js版本的dispatchWorkFlow函数
  */
 @Slf4j
 @Service
@@ -32,8 +33,10 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
     private final VariableManager variableManager;
     private final UsageTrackingService usageTrackingService;
     
-    // 默认使用来源
+    // 默认来源
     private static final String DEFAULT_SOURCE = "fastgpt";
+    // 最大运行次数
+    private static final int MAX_RUN_TIMES = 50;
 
     @Override
     public Map<String, Object> dispatchWorkflow(WorkflowDTO workflow, 
@@ -42,57 +45,47 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
                                               String teamId,
                                               String appId,
                                               BiConsumer<String, Boolean> streamConsumer) {
-        // 最大运行次数控制
-        int maxRunTimes = 50;
-        // 保存节点响应
+        // 保存节点响应和资源使用情况
         List<Map<String, Object>> flowResponses = new ArrayList<>();
-        // 保存资源使用情况
         List<Map<String, Object>> flowUsages = new ArrayList<>();
+        
         // 初始化变量(包括系统变量和输入变量)
         Map<String, Object> variables = new HashMap<>(inputs);
         variables.putAll(getSystemVariables(userId, teamId, appId));
         
-        // 开始时间
+        // 记录执行时间
         long startTime = System.currentTimeMillis();
         
-        // 所有节点和边的运行时副本
+        // 运行时节点和边副本
         List<Node> runtimeNodes = new ArrayList<>(workflow.getNodes());
         List<Edge> runtimeEdges = new ArrayList<>(workflow.getEdges());
+        
+        // 剩余运行次数
+        int remainingRuns = MAX_RUN_TIMES;
         
         // 总输出结果
         Map<String, Object> finalOutputs = new HashMap<>();
         
         try {
-            // 找到入口节点
-            List<Node> entryNodes = runtimeNodes.stream()
-                .filter(Node::isEntry)
-                .collect(Collectors.toList());
-            
-            // 重置入口状态（除了特殊节点）
-            runtimeNodes.forEach(node -> {
-                if (!isInteractiveNode(node.getType().toString())) {
-                    node.setEntry(false);
-                }
-            });
-            
-            // 运行所有入口节点
-            for (Node node : entryNodes) {
-                Set<String> skippedNodeIdList = new HashSet<>();
-                List<Node> executedNodes = runNode(node, runtimeNodes, runtimeEdges, variables, 
-                    maxRunTimes, flowResponses, flowUsages, streamConsumer, skippedNodeIdList);
-                
-                // 更新最终输出
-                for (Node executedNode : executedNodes) {
-                    for (NodeOutput output : executedNode.getOutputs()) {
-                        if (output.getValue() != null) {
-                            finalOutputs.put(output.getKey(), output.getValue());
-                        }
-                    }
-                }
-            }
+            // 找到入口节点并执行
+            List<String> nodeIds = executeWorkflow(
+                runtimeNodes, 
+                runtimeEdges, 
+                variables, 
+                remainingRuns, 
+                flowResponses, 
+                flowUsages, 
+                streamConsumer, 
+                finalOutputs
+            );
             
             // 跟踪工作流使用情况
-            trackWorkflowUsage(workflow, userId, teamId, appId, flowUsages);
+            if (!flowUsages.isEmpty()) {
+                usageTrackingService.trackWorkflowUsage(
+                    workflow.getName() != null ? workflow.getName() : "未命名工作流",
+                    appId, teamId, userId, DEFAULT_SOURCE, flowUsages
+                );
+            }
             
             return finalOutputs;
         } catch (Exception e) {
@@ -101,7 +94,6 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
             errorResult.put("error", e.getMessage());
             return errorResult;
         } finally {
-            // 记录工作流执行时间
             long executionTime = System.currentTimeMillis() - startTime;
             log.info("Workflow {} executed in {}ms", workflow.getWorkflowId(), executionTime);
         }
@@ -113,159 +105,259 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
                                             String userId,
                                             String teamId,
                                             String appId) {
-        List<Node> finishedNodes = new ArrayList<>();
-        List<Edge> finishedEdges = new ArrayList<>();
-        List<Node> nextStepRunNodes = new ArrayList<>();
-        Map<String, Object> variables = new HashMap<>(inputs);
-        variables.putAll(getSystemVariables(userId, teamId, appId));
-        
-        // 创建调试响应
-        WorkflowDebugResponse debugResponse = new WorkflowDebugResponse();
-        debugResponse.setFinishedNodes(finishedNodes);
-        debugResponse.setFinishedEdges(finishedEdges);
-        debugResponse.setNextStepRunNodes(nextStepRunNodes);
-        
         // 运行工作流
         Map<String, Object> outputs = dispatchWorkflow(workflow, inputs, userId, teamId, appId, null);
         
-        // 设置调试信息
-        debugResponse.setOutputs(outputs);
+        // 将运行节点和边转换为调试响应格式
+        List<String> finishedNodeIds = workflow.getNodes().stream()
+            .map(Node::getNodeId)
+            .collect(Collectors.toList());
+        
+        List<EdgeStatusDTO> edgeStatusList = workflow.getEdges().stream()
+            .map(edge -> {
+                EdgeStatusDTO.EdgeStatusEnum status;
+                try {
+                    status = EdgeStatusDTO.EdgeStatusEnum.valueOf(
+                        (edge.getStatus() != null ? edge.getStatus() : "COMPLETED").toUpperCase()
+                    );
+                } catch (IllegalArgumentException e) {
+                    status = EdgeStatusDTO.EdgeStatusEnum.ACTIVE;
+                }
+                return EdgeStatusDTO.builder()
+                    .id(edge.getEdgeId())
+                    .status(status)
+                    .build();
+            })
+            .collect(Collectors.toList());
+        
+        // 创建调试响应
+        WorkflowDebugResponse debugResponse = new WorkflowDebugResponse();
+        debugResponse.setFinishedNodes(finishedNodeIds);
+        debugResponse.setFinishedEdges(edgeStatusList);
+        debugResponse.setNextStepRunNodes(Collections.emptyList());
+        
+        // 添加输出
+        Map<String, Object> outMap = new HashMap<>(outputs);
+        outMap.put("success", true);
+        
         return debugResponse;
     }
 
     /**
-     * 运行节点并获取下一步节点
+     * 执行工作流
      */
-    private List<Node> runNode(Node node, 
-                              List<Node> runtimeNodes, 
-                              List<Edge> runtimeEdges,
-                              Map<String, Object> variables,
-                              int maxRunTimes,
-                              List<Map<String, Object>> flowResponses,
-                              List<Map<String, Object>> flowUsages,
-                              BiConsumer<String, Boolean> streamConsumer,
-                              Set<String> skippedNodeIdList) {
+    private List<String> executeWorkflow(
+        List<Node> runtimeNodes, 
+        List<Edge> runtimeEdges,
+        Map<String, Object> variables,
+        int remainingRuns,
+        List<Map<String, Object>> flowResponses,
+        List<Map<String, Object>> flowUsages,
+        BiConsumer<String, Boolean> streamConsumer,
+        Map<String, Object> finalOutputs
+    ) {
+        // 找到入口节点
+        List<Node> entryNodes = runtimeNodes.stream()
+            .filter(Node::isEntry)
+            .collect(Collectors.toList());
+        
+        // 重置非交互式节点的入口状态
+        runtimeNodes.forEach(node -> {
+            if (!isInteractiveNode(node.getType().toString())) {
+                node.setEntry(false);
+            }
+        });
+        
+        List<String> executedNodeIds = new ArrayList<>();
+        Set<String> skippedNodeIds = new HashSet<>();
+        
+        // 执行所有入口节点
+        for (Node node : entryNodes) {
+            // 执行节点和下游节点
+            executeNodeAndDownstream(
+                node, 
+                runtimeNodes, 
+                runtimeEdges, 
+                variables, 
+                remainingRuns, 
+                flowResponses, 
+                flowUsages, 
+                streamConsumer, 
+                executedNodeIds, 
+                skippedNodeIds
+            );
+            
+            // 收集输出
+            for (Node executedNode : runtimeNodes) {
+                if (executedNodeIds.contains(executedNode.getNodeId())) {
+                    for (NodeOutput output : executedNode.getOutputs()) {
+                        if (output.getValue() != null) {
+                            finalOutputs.put(output.getKey(), output.getValue());
+                        }
+                    }
+                }
+            }
+        }
+        
+        return executedNodeIds;
+    }
+    
+    /**
+     * 执行节点和下游节点
+     */
+    private void executeNodeAndDownstream(
+        Node node,
+        List<Node> runtimeNodes,
+        List<Edge> runtimeEdges,
+        Map<String, Object> variables,
+        int remainingRuns,
+        List<Map<String, Object>> flowResponses,
+        List<Map<String, Object>> flowUsages,
+        BiConsumer<String, Boolean> streamConsumer,
+        List<String> executedNodeIds,
+        Set<String> skippedNodeIds
+    ) {
+        // 检查运行次数限制
+        if (remainingRuns <= 0) {
+            return;
+        }
+        
+        // 检查节点是否已经执行过
+        if (executedNodeIds.contains(node.getNodeId()) || skippedNodeIds.contains(node.getNodeId())) {
+            return;
+        }
+        
         // 检查节点运行状态
         String status = checkNodeRunStatus(node, runtimeEdges);
         
-        if (maxRunTimes <= 0) {
-            return Collections.emptyList();
-        }
-        
-        List<Node> executedNodes = new ArrayList<>();
-        
-        // 根据状态执行节点
         if ("run".equals(status)) {
+            // 初始化边状态
             initNodeEdges(node, runtimeEdges);
-            log.debug("Running node: {}", node.getName());
             
+            // 执行节点
             long nodeStartTime = System.currentTimeMillis();
-            NodeResult result = runNodeWithActive(node, runtimeNodes, runtimeEdges, variables);
+            Map<String, Object> result = executeNode(node, runtimeNodes, variables);
             long nodeExecutionTime = System.currentTimeMillis() - nodeStartTime;
             
             // 跟踪节点执行
             trackNodeExecution(variables, node, nodeExecutionTime);
             
-            executedNodes.add(node);
+            // 记录已执行的节点
+            executedNodeIds.add(node.getNodeId());
             
-            // 保存结果
-            if (result.getResult() != null) {
-                if (result.getResult().get("responseData") != null) {
-                    flowResponses.add((Map<String, Object>) result.getResult().get("responseData"));
-                }
-                if (result.getResult().get("nodeDispatchUsages") != null) {
-                    flowUsages.add((Map<String, Object>) result.getResult().get("nodeDispatchUsages"));
-                }
-                
-                // 更新变量
-                if (result.getResult().get("newVariables") != null) {
-                    variables.putAll((Map<String, Object>) result.getResult().get("newVariables"));
-                }
-                
-                // 处理流式输出
-                if (streamConsumer != null && result.getResult().get("answerText") != null) {
-                    String text = (String) result.getResult().get("answerText");
-                    if (text != null && !text.isEmpty()) {
-                        streamConsumer.accept(text, false);
-                    }
-                }
+            // 处理结果
+            if (result != null) {
+                processNodeResult(
+                    node, 
+                    result, 
+                    variables, 
+                    flowResponses, 
+                    flowUsages, 
+                    streamConsumer
+                );
             }
             
-            // 更新节点输出
-            updateNodeOutputs(node, result.getResult());
+            // 获取并执行下一步节点
+            Map<String, List<Node>> nextNodes = getNextNodes(
+                node, 
+                result, 
+                runtimeNodes, 
+                runtimeEdges
+            );
             
-            // 获取下一步节点
-            NodeNextStep nextStep = getNextStepNodes(node, result.getResult(), runtimeNodes, runtimeEdges);
-            
-            // 执行下一步活动节点
-            for (Node nextNode : nextStep.getNextStepActiveNodes()) {
-                List<Node> nextExecutedNodes = runNode(nextNode, runtimeNodes, runtimeEdges,
-                    variables, maxRunTimes - 1, flowResponses, flowUsages, streamConsumer, skippedNodeIdList);
-                executedNodes.addAll(nextExecutedNodes);
+            // 执行下一步激活节点
+            for (Node nextNode : nextNodes.get("active")) {
+                executeNodeAndDownstream(
+                    nextNode, 
+                    runtimeNodes, 
+                    runtimeEdges, 
+                    variables, 
+                    remainingRuns - 1, 
+                    flowResponses, 
+                    flowUsages, 
+                    streamConsumer, 
+                    executedNodeIds, 
+                    skippedNodeIds
+                );
             }
             
             // 执行下一步跳过节点
-            for (Node nextNode : nextStep.getNextStepSkipNodes()) {
-                if (!executedNodes.contains(nextNode) && !skippedNodeIdList.contains(nextNode.getNodeId())) {
-                    List<Node> nextExecutedNodes = runNode(nextNode, runtimeNodes, runtimeEdges,
-                        variables, maxRunTimes - 1, flowResponses, flowUsages, streamConsumer, skippedNodeIdList);
-                    executedNodes.addAll(nextExecutedNodes);
-                }
+            for (Node nextNode : nextNodes.get("skipped")) {
+                executeNodeAndDownstream(
+                    nextNode, 
+                    runtimeNodes, 
+                    runtimeEdges, 
+                    variables, 
+                    remainingRuns - 1, 
+                    flowResponses, 
+                    flowUsages, 
+                    streamConsumer, 
+                    executedNodeIds, 
+                    skippedNodeIds
+                );
             }
-        } else if ("skip".equals(status) && !skippedNodeIdList.contains(node.getNodeId())) {
-            initNodeEdges(node, runtimeEdges);
-            log.debug("Skipping node: {}", node.getName());
-            skippedNodeIdList.add(node.getNodeId());
+        } else if ("skip".equals(status)) {
+            // 记录跳过的节点
+            skippedNodeIds.add(node.getNodeId());
             
             // 标记所有出边为skip
-            NodeResult result = runNodeWithSkip(node);
-            executedNodes.add(node);
-            
-            // 获取下一步节点
-            NodeNextStep nextStep = getNextStepNodes(node, result.getResult(), runtimeNodes, runtimeEdges);
-            
-            // 执行下一步节点（全部以skip方式）
-            for (Node nextNode : nextStep.getNextStepActiveNodes()) {
-                if (!executedNodes.contains(nextNode) && !skippedNodeIdList.contains(nextNode.getNodeId())) {
-                    List<Node> nextExecutedNodes = runNode(nextNode, runtimeNodes, runtimeEdges,
-                        variables, maxRunTimes - 1, flowResponses, flowUsages, streamConsumer, skippedNodeIdList);
-                    executedNodes.addAll(nextExecutedNodes);
+            for (Edge edge : runtimeEdges) {
+                if (edge.getSource().equals(node.getNodeId())) {
+                    edge.setStatus("skipped");
                 }
             }
             
-            for (Node nextNode : nextStep.getNextStepSkipNodes()) {
-                if (!executedNodes.contains(nextNode) && !skippedNodeIdList.contains(nextNode.getNodeId())) {
-                    List<Node> nextExecutedNodes = runNode(nextNode, runtimeNodes, runtimeEdges,
-                        variables, maxRunTimes - 1, flowResponses, flowUsages, streamConsumer, skippedNodeIdList);
-                    executedNodes.addAll(nextExecutedNodes);
+            // 获取下一步节点
+            List<Node> nextNodes = runtimeNodes.stream()
+                .filter(n -> runtimeEdges.stream()
+                    .anyMatch(e -> e.getSource().equals(node.getNodeId()) 
+                        && e.getTarget().equals(n.getNodeId())))
+                .collect(Collectors.toList());
+            
+            // 执行下一步节点
+            for (Node nextNode : nextNodes) {
+                if (!executedNodeIds.contains(nextNode.getNodeId()) 
+                    && !skippedNodeIds.contains(nextNode.getNodeId())) {
+                    executeNodeAndDownstream(
+                        nextNode, 
+                        runtimeNodes, 
+                        runtimeEdges, 
+                        variables, 
+                        remainingRuns - 1, 
+                        flowResponses, 
+                        flowUsages, 
+                        streamConsumer, 
+                        executedNodeIds, 
+                        skippedNodeIds
+                    );
                 }
             }
         }
-        
-        return executedNodes;
     }
     
     /**
-     * 主动运行节点
+     * 执行单个节点
      */
-    private NodeResult runNodeWithActive(Node node, List<Node> runtimeNodes, List<Edge> runtimeEdges, Map<String, Object> variables) {
-        // 获取节点运行参数
-        Map<String, Object> params = getNodeRunParams(node, runtimeNodes, variables);
+    private Map<String, Object> executeNode(Node node, List<Node> runtimeNodes, Map<String, Object> variables) {
+        log.debug("Executing node: {}", node.getName());
         
         try {
+            // 获取节点参数
+            Map<String, Object> params = getNodeParams(node, runtimeNodes, variables);
+            
             // 获取节点调度器
             NodeDispatcher dispatcher = nodeDispatcherRegistry.getDispatcher(node.getType().toString());
             if (dispatcher == null) {
                 throw new IllegalArgumentException("No dispatcher found for node type: " + node.getType());
             }
             
-            // 调度节点执行
+            // 执行节点
             NodeOutDTO outDTO = dispatcher.dispatch(node, params);
             
-            // 转换结果格式
+            // 转换结果
             Map<String, Object> result = new HashMap<>();
             if (outDTO != null) {
-                // 添加基本输出
+                // 添加输出
                 if (outDTO.getOutput() != null) {
                     result.putAll(outDTO.getOutput());
                 }
@@ -281,7 +373,7 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
                     result.put("responseData", responseData);
                 }
                 
-                // 添加资源使用情况
+                // 添加使用统计
                 if (outDTO.getUsages() != null) {
                     result.put("nodeDispatchUsages", outDTO.getUsages());
                 }
@@ -292,60 +384,127 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
                 }
             }
             
-            return new NodeResult(node, "run", result);
+            // 更新节点输出
+            updateNodeOutputs(node, result);
+            
+            return result;
         } catch (Exception e) {
-            log.error("Error running node: {}", node.getName(), e);
+            log.error("Error executing node: {}", node.getName(), e);
             
-            // 获取所有出边的源句柄
-            List<String> skipHandleIds = runtimeEdges.stream()
-                .filter(edge -> edge.getSourceNodeId().equals(node.getNodeId()))
-                .map(Edge::getSourceHandle)
-                .collect(Collectors.toList());
+            // 构建错误结果
+            Map<String, Object> errorResult = new HashMap<>();
+            errorResult.put("error", e.getMessage());
             
-            Map<String, Object> result = new HashMap<>();
-            result.put("error", e.getMessage());
-            result.put("skipHandleId", skipHandleIds);
-            
-            return new NodeResult(node, "error", result);
+            return errorResult;
         }
     }
     
     /**
-     * 以跳过方式处理节点
+     * 处理节点结果
      */
-    private NodeResult runNodeWithSkip(Node node) {
-        // 获取所有出边的源句柄
-        List<String> skipHandleIds = new ArrayList<>();
-        Map<String, Object> result = new HashMap<>();
-        result.put("skipHandleId", skipHandleIds);
+    private void processNodeResult(
+        Node node,
+        Map<String, Object> result,
+        Map<String, Object> variables,
+        List<Map<String, Object>> flowResponses,
+        List<Map<String, Object>> flowUsages,
+        BiConsumer<String, Boolean> streamConsumer
+    ) {
+        // 保存响应数据
+        if (result.get("responseData") != null) {
+            flowResponses.add((Map<String, Object>) result.get("responseData"));
+        }
         
-        return new NodeResult(node, "skip", result);
+        // 保存使用统计
+        if (result.get("nodeDispatchUsages") != null) {
+            flowUsages.add((Map<String, Object>) result.get("nodeDispatchUsages"));
+        }
+        
+        // 更新变量
+        if (result.get("newVariables") != null) {
+            variables.putAll((Map<String, Object>) result.get("newVariables"));
+        }
+        
+        // 处理流式输出
+        if (streamConsumer != null && result.get("answerText") != null) {
+            String text = (String) result.get("answerText");
+            if (text != null && !text.isEmpty()) {
+                streamConsumer.accept(text, false);
+            }
+        }
     }
     
     /**
-     * 获取节点运行参数，处理变量替换
+     * 获取下一步节点
      */
-    private Map<String, Object> getNodeRunParams(Node node, List<Node> runtimeNodes, Map<String, Object> variables) {
+    private Map<String, List<Node>> getNextNodes(
+        Node node, 
+        Map<String, Object> result, 
+        List<Node> runtimeNodes, 
+        List<Edge> runtimeEdges
+    ) {
+        // 获取跳过的源句柄
+        List<String> skipHandleIds = result != null && result.containsKey("skipHandleId") 
+            ? (List<String>) result.get("skipHandleId") 
+            : Collections.emptyList();
+        
+        // 获取出边
+        List<Edge> outEdges = runtimeEdges.stream()
+            .filter(edge -> edge.getSource().equals(node.getNodeId()))
+            .collect(Collectors.toList());
+        
+        // 更新边状态
+        for (Edge edge : outEdges) {
+            if (skipHandleIds.contains(edge.getSourceHandle())) {
+                edge.setStatus("skipped");
+            } else {
+                edge.setStatus("active");
+            }
+        }
+        
+        // 获取下一步激活节点
+        List<Node> activeNodes = runtimeNodes.stream()
+            .filter(n -> outEdges.stream()
+                .anyMatch(e -> e.getTarget().equals(n.getNodeId()) && "active".equals(e.getStatus())))
+            .collect(Collectors.toList());
+        
+        // 获取下一步跳过节点
+        List<Node> skippedNodes = runtimeNodes.stream()
+            .filter(n -> outEdges.stream()
+                .anyMatch(e -> e.getTarget().equals(n.getNodeId()) && "skipped".equals(e.getStatus())))
+            .collect(Collectors.toList());
+        
+        Map<String, List<Node>> nextNodes = new HashMap<>();
+        nextNodes.put("active", activeNodes);
+        nextNodes.put("skipped", skippedNodes);
+        
+        return nextNodes;
+    }
+    
+    /**
+     * 获取节点参数
+     */
+    private Map<String, Object> getNodeParams(Node node, List<Node> runtimeNodes, Map<String, Object> variables) {
         Map<String, Object> params = new HashMap<>();
         
-        // 处理动态输入
+        // 查找动态输入
         NodeInput dynamicInput = node.getInputs().stream()
             .filter(input -> "addInputParam".equals(input.getRenderType()))
             .findFirst()
             .orElse(null);
         
         if (dynamicInput != null) {
-            params.put(dynamicInput.getKey(), new HashMap<String, Object>());
+            params.put(dynamicInput.getKey(), new HashMap<>());
         }
         
         // 处理所有输入
         for (NodeInput input : node.getInputs()) {
-            // 特殊输入处理
+            // 跳过动态输入键
             if (dynamicInput != null && input.getKey().equals(dynamicInput.getKey())) {
                 continue;
             }
             
-            // 特殊键不需要处理
+            // 特殊键直接使用
             if (Arrays.asList("childrenNodeIdList", "httpJsonBody").contains(input.getKey())) {
                 params.put(input.getKey(), input.getValue());
                 continue;
@@ -354,12 +513,13 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
             // 替换变量
             Object value = variableManager.replaceVariables(input.getValue(), runtimeNodes, variables);
             
-            // 处理动态输入
+            // 动态输入处理
             if (input.isCanEdit() && dynamicInput != null && params.containsKey(dynamicInput.getKey())) {
                 Map<String, Object> dynamicParams = (Map<String, Object>) params.get(dynamicInput.getKey());
                 dynamicParams.put(input.getKey(), formatValue(value, input.getValueType()));
             }
             
+            // 保存参数
             params.put(input.getKey(), formatValue(value, input.getValueType()));
         }
         
@@ -367,7 +527,7 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
     }
     
     /**
-     * 根据值类型格式化值
+     * 格式化值
      */
     private Object formatValue(Object value, String valueType) {
         if (value == null) return null;
@@ -380,6 +540,7 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
                     return value;
                 }
                 return false;
+                
             case "number":
                 if (value instanceof String) {
                     try {
@@ -391,18 +552,15 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
                     return ((Number) value).doubleValue();
                 }
                 return 0;
+                
             case "json":
                 if (value instanceof String) {
-                    try {
-                        // 简化处理，实际需要使用JSON库
-                        return value;
-                    } catch (Exception e) {
-                        return "{}";
-                    }
+                    return value; // 简化处理
                 } else if (value instanceof Map) {
                     return value;
                 }
                 return "{}";
+                
             default:
                 return String.valueOf(value);
         }
@@ -436,17 +594,17 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
      * 检查节点运行状态
      */
     private String checkNodeRunStatus(Node node, List<Edge> runtimeEdges) {
-        // 如果是入口节点，直接运行
+        // 入口节点直接运行
         if (node.isEntry()) {
             return "run";
         }
         
-        // 获取进入该节点的所有边
+        // 获取进入该节点的边
         List<Edge> inputEdges = runtimeEdges.stream()
             .filter(edge -> edge.getTarget().equals(node.getNodeId()))
             .collect(Collectors.toList());
         
-        // 如果没有输入边，跳过节点
+        // 没有输入边则跳过
         if (inputEdges.isEmpty()) {
             return "skip";
         }
@@ -459,43 +617,7 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
     }
     
     /**
-     * 获取下一步节点
-     */
-    private NodeNextStep getNextStepNodes(Node node, Map<String, Object> result, List<Node> runtimeNodes, List<Edge> runtimeEdges) {
-        List<String> skipHandleId = result != null && result.containsKey("skipHandleId") ? 
-            (List<String>) result.get("skipHandleId") : Collections.emptyList();
-        
-        // 获取从该节点出发的所有边
-        List<Edge> targetEdges = runtimeEdges.stream()
-            .filter(edge -> edge.getSource().equals(node.getNodeId()))
-            .collect(Collectors.toList());
-        
-        // 更新边状态
-        for (Edge edge : targetEdges) {
-            if (skipHandleId.contains(edge.getSourceHandle())) {
-                edge.setStatus("skipped");
-            } else {
-                edge.setStatus("active");
-            }
-        }
-        
-        // 获取下一步激活节点
-        List<Node> nextStepActiveNodes = runtimeNodes.stream()
-            .filter(n -> targetEdges.stream()
-                .anyMatch(e -> e.getTarget().equals(n.getNodeId()) && "active".equals(e.getStatus())))
-            .collect(Collectors.toList());
-        
-        // 获取下一步跳过节点
-        List<Node> nextStepSkipNodes = runtimeNodes.stream()
-            .filter(n -> targetEdges.stream()
-                .anyMatch(e -> e.getTarget().equals(n.getNodeId()) && "skipped".equals(e.getStatus())))
-            .collect(Collectors.toList());
-        
-        return new NodeNextStep(nextStepActiveNodes, nextStepSkipNodes);
-    }
-    
-    /**
-     * 判断是否为交互式节点
+     * 是否交互式节点
      */
     private boolean isInteractiveNode(String nodeType) {
         return Arrays.asList("userSelect", "formInput", "tools").contains(nodeType);
@@ -514,29 +636,6 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
     }
     
     /**
-     * 跟踪工作流使用情况
-     */
-    private void trackWorkflowUsage(WorkflowDTO workflow, String userId, String teamId, String appId, List<Map<String, Object>> flowUsages) {
-        if (flowUsages == null || flowUsages.isEmpty()) {
-            return;
-        }
-        
-        try {
-            // 使用UsageTrackingService跟踪资源使用
-            usageTrackingService.trackWorkflowUsage(
-                workflow.getName() != null ? workflow.getName() : "未命名工作流",
-                appId,
-                teamId,
-                userId,
-                DEFAULT_SOURCE,
-                flowUsages
-            );
-        } catch (Exception e) {
-            log.error("Error tracking workflow usage", e);
-        }
-    }
-    
-    /**
      * 跟踪节点执行
      */
     private void trackNodeExecution(Map<String, Object> variables, Node node, long executionTimeMs) {
@@ -547,36 +646,11 @@ public class WorkflowDispatcherImpl implements WorkflowDispatcher {
             
             if (userId != null && appId != null) {
                 usageTrackingService.trackNodeExecution(
-                    appId,
-                    teamId,
-                    userId,
-                    node.getType().toString(),
-                    executionTimeMs
+                    appId, teamId, userId, node.getType().toString(), executionTimeMs
                 );
             }
         } catch (Exception e) {
             log.error("Error tracking node execution", e);
         }
-    }
-    
-    /**
-     * 节点结果包装类
-     */
-    @lombok.Data
-    @lombok.AllArgsConstructor
-    private static class NodeResult {
-        private Node node;
-        private String runStatus;
-        private Map<String, Object> result;
-    }
-    
-    /**
-     * 下一步节点包装类
-     */
-    @lombok.Data
-    @lombok.AllArgsConstructor
-    private static class NodeNextStep {
-        private List<Node> nextStepActiveNodes;
-        private List<Node> nextStepSkipNodes;
     }
 } 

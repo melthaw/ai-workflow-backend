@@ -20,7 +20,7 @@ public class NodeOutDTO {
     /**
      * 输出值映射
      */
-    private Map<String, Object> output;
+    private Map<String, Object> outputs;
     
     /**
      * 节点执行响应数据
@@ -68,6 +68,11 @@ public class NodeOutDTO {
     private String interactionId;
     
     /**
+     * Variables to add to the workflow context
+     */
+    private Map<String, Object> variables;
+    
+    /**
      * Create a successful result
      * @param outputs Node outputs
      * @return A success result
@@ -90,6 +95,20 @@ public class NodeOutDTO {
                 .success(true)
                 .outputs(outputs != null ? outputs : new HashMap<>())
                 .metadata(metadata != null ? metadata : new HashMap<>())
+                .build();
+    }
+    
+    /**
+     * Create a successful result with variables
+     * @param outputs Node outputs
+     * @param variables Variables to add to workflow context
+     * @return A success result
+     */
+    public static NodeOutDTO successWithVariables(Map<String, Object> outputs, Map<String, Object> variables) {
+        return NodeOutDTO.builder()
+                .success(true)
+                .outputs(outputs != null ? outputs : new HashMap<>())
+                .variables(variables != null ? variables : new HashMap<>())
                 .build();
     }
     
@@ -169,14 +188,14 @@ public class NodeOutDTO {
     /**
      * 提供兼容性的方法，确保现有代码可以正常工作
      */
-    public Map<String, Object> getOutputs() {
-        return output != null ? output : new HashMap<>();
+    public Map<String, Object> getOutput() {
+        return outputs != null ? outputs : new HashMap<>();
     }
     
     /**
      * 提供兼容性的方法，确保现有代码可以正常工作
      */
-    public void setOutputs(Map<String, Object> outputs) {
-        this.output = outputs;
+    public void setOutput(Map<String, Object> output) {
+        this.outputs = output;
     }
 } 
